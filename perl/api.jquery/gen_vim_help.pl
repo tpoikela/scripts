@@ -205,7 +205,14 @@ sub get_signature {
 sub get_from_sign {
     my ($sign, $tag) = @_;
     my $href = $sign->{argument};
-    return $href->{$tag} if exists $href->{$tag};
+    if (ref($href->{$tag}) eq 'HASH') {
+        if ($tag eq "desc") {
+            return format_code_desc($href->{desc});
+        }
+    }
+    else {
+        return $href->{$tag} if exists $href->{$tag};
+    }
     return "";
 
 }
@@ -215,6 +222,7 @@ sub get_line {
     return $sym x $LINE_LENGTH;
 }
 
+# Returns the code examples in a formatted string.
 sub get_examples {
     my ($doc) = @_;
     if (exists $doc->{example}) {
@@ -223,7 +231,6 @@ sub get_examples {
         foreach my $ex (@examples) {
             my $code = $ex->{code};
             $res .= format_code_desc($ex->{desc});
-            #$res .= wrap("\t", "\t", $ex->{code}) . "<\n";
             $code = reformat_code($code);
             $res .=  $code . "\n<\n";
         }
@@ -235,14 +242,18 @@ sub format_code_desc {
     my ($desc) = @_;
     if (ref($desc) eq 'HASH') {
         my $res = "";
+
         # Need to intertwine content/code
         my @content = coerce_into_array($desc->{content});
         my @code = coerce_into_array($desc->{code});
         @code = map {$_ = "`$_`"} @code;
         my $len = int(@code);
+        $len = int(@content) > $len ? int(@content) : $len;
         for (my $i = 0; $i < $len; ++$i) {
             $res .= $content[$i];
-            $res .= $code[$i];
+            if ($i < int(@code)) {
+                $res .= $code[$i];
+            }
         }
         return wrap("", "", $res);
 
@@ -258,7 +269,7 @@ sub coerce_into_array {
         return @{$code};
     }
     else {
-        return qw($code);
+        return ($code);
     }
 }
 
