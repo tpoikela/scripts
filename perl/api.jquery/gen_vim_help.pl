@@ -7,13 +7,13 @@
 #
 #  DESCRIPTION: A script to convert jQuery docs into vim-help format.
 #
-#      OPTIONS: -debug
-# REQUIREMENTS: XML::Simple
+#      OPTIONS: -debug, -quiet
+# REQUIREMENTS: XML::Simple, HTML::Strip
 #         BUGS: ---
 #        NOTES: ---
 #       AUTHOR: Tuomas Poikela (tpoikela), tuomas.sakari.poikela@gmail.com
-# ORGANIZATION: CERN
-#      VERSION: 1.0
+# ORGANIZATION: ---
+#      VERSION: 0.8
 #      CREATED: 26/06/16 19:11:58
 #     REVISION: ---
 #===============================================================================
@@ -25,12 +25,14 @@ use utf8;
 use Text::Wrap;
 use Data::Dumper;
 use XML::Simple;
+use HTML::Strip;
+use Encode;
 use Getopt::Long;
 
 my %opt;
 GetOptions(
     "d|debug" => \$opt{debug},
-    <+opt2+> => \$opt{<+val2+>},
+    "q|quiet" => \$opt{q},
 );
 
 my $LINE_LENGTH = 75;
@@ -42,7 +44,7 @@ my %methods;
 my %selectors;
 my %properties;
 
-
+my $strip = HTML::Strip->new();
 
 my @files = get_xml_source_files();
 
@@ -60,15 +62,19 @@ foreach my $f (@files) {
     my $doc = $xml->XMLin($f);
 
     debug_print($doc, $f);
+    
+    my @entries = unearth_entries($doc, $f);
 
-    my $name = get_entry_name($doc, $f);
-    my $type = get_type($doc);
-    my $signature = get_signature($doc);
-    my $desc = get_desc($doc);
-    my $examples = get_examples($doc);
+    foreach my $entry (@entries) {
+        my $name = get_entry_name($doc, $f);
+        my $type = get_type($doc);
+        my $signature = get_signature($doc);
+        my $desc = get_desc($doc);
+        my $examples = get_examples($doc);
 
-    add($type, get_line("-") . "\n" );
-    add($type,  $name . "\n$type\n$signature\n\n" . $desc . "\n\n" . $examples);
+        add($type, get_line("-") . "\n" );
+        add($type,  $name . "\n$type\n$signature\n\n" . $desc . "\n\n" . $examples);
+    }
 }
 
 print_post_amble();
@@ -76,6 +82,17 @@ print_post_amble();
 #---------------------------------------------------------------------------
 # HELPER FUNCTIONS
 #---------------------------------------------------------------------------
+#
+sub unearth_entries {
+    my ($doc, $f) = @_;
+    if (exists $doc->{entry}) {
+        return values $doc->{entry};
+
+    }
+    else {
+        return ($doc);
+    }
+}
 
 # Grabs the source files using wget unless the folder is in current folder
 sub get_xml_source_files {
@@ -130,19 +147,21 @@ sub get_entry_name {
     my $res = "";
     if (is_method($href)) {
         $name .= "()" unless $name =~ /\(/;
-        $res =  "`$name`" . " *jquery-$name* " . get_link($name);
+        $res =  "`$name`" . " *jquery-$name*  " . get_link($name);
         $methods{$name} = "$name";
     }
     elsif (is_selector($href)) {
-        $res =  "`$name`" . " *jquery-$name* ". get_link($name);
+        $res =  "`$name`" . " *jquery-$name*  ". get_link($name);
         $selectors{$name} = $name;
     }
     elsif (is_property($href)) {
-        $res =  "`$name`" . " *jquery-$name*". get_link($name);
+        my $tag = lc("*jquery-$name*");
+        $tag =~ s/\./-/g;
+        $res =  "`$name` $tag" . "   ". get_link($name);
         $properties{$name} = $name;
     }
     else {
-        print STDERR "File: $f\nUNSUPPORTED type: " . $href->{type};
+        print STDERR "File: $f\nUNSUPPORTED type: |" . $href->{type} . "|";
         print STDERR Dumper($href);
     }
     $top{curr} = $name;
@@ -230,7 +249,7 @@ sub get_examples {
         my $res = "EXAMPLE |jquery-" . $doc->{name} . "|\n\n";
         foreach my $ex (@examples) {
             my $code = $ex->{code};
-            $res .= format_code_desc($ex->{desc});
+            $res .= format_code_desc($ex->{desc}) .">\n";
             $code = reformat_code($code);
             $res .=  $code . "\n<\n";
         }
@@ -255,11 +274,13 @@ sub format_code_desc {
                 $res .= $code[$i];
             }
         }
+        $res = $strip->parse($res);
         return wrap("", "", $res);
 
     }
     else {
-        wrap('', '', $desc) . " >\n";
+        $desc = $strip->parse($desc);
+        return wrap('', '', $desc);
     }
 }
 
@@ -275,7 +296,13 @@ sub coerce_into_array {
 
 sub reformat_code {
     my ($code) = @_;
-    my @code = split("\n", $code);
+    my @code;
+    if (ref($code) eq 'HASH') {
+        @code = ($code->{content});
+    }
+    else {
+        @code = split("\n", $code);
+    }
     @code = map {$_ = "\t" . $_} @code;
     return join("\n", @code);
 }
@@ -286,7 +313,6 @@ sub get_desc {
     my $text = "";
     if (ref($desc) eq 'HASH') {
         $text =  join('', @{$desc->{content}});
-
     }
     else {
         if (exists $doc->{desc}) {
