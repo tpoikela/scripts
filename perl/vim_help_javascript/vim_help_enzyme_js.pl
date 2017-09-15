@@ -75,13 +75,6 @@ sub create_one_md_file {
         push(@md_files, glob($g));
     }
 
-    #open(my $IFILE, "<", "doc/api/all.md") or die($!);
-    #while (<$IFILE>) {
-    #    my $line = $_;
-    #    if ($line =~ m/\@include\s+(\w+)$/) {
-    #        push(@md_files, "doc/api/$1.md");
-    #    }
-    #}
     if (int(@md_files) == 0) {
         die("Cannot find any .md files.");
     }
